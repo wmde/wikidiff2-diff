@@ -7,8 +7,10 @@ import sys
 import itertools
 import re
 import urllib2
+import random
 from wikitools import wiki, api
 import difflib
+from multiprocessing.dummy import Pool as ThreadPool
 
 if __name__ == '__main__':
     testwikiurl_old= "http://wmde-wikidiff2-unpatched.wmflabs.org/core"
@@ -27,22 +29,22 @@ if __name__ == '__main__':
 
     req= api.APIRequest(wikiA, { "action": "query", "list": "prefixsearch", "pssearch": "Autoimport/" })
     res= req.queryGen()
-    diffstotal= 0
-    diffschanged= 0
-    diffs= []
-    #~ res= itertools.islice(res, 10/10)
-    for chunk in res:
-        for page in chunk["query"]["prefixsearch"]:
-            print ("%60s" % page["title"]).encode("utf-8"),
-            req= api.APIRequest(wikiA, { "action": "query", "prop": "revisions", "titles": page["title"], "rvprop": "ids", "rvlimit": "max" })
+    res= itertools.islice(res, 100/10)
+    
+    def comparediffs(page):
+        #~ print("args: %s" % str(args))
+        print ("%60s" % page["title"]).encode("utf-8")  #,
+        try:
+            req= api.APIRequest(random.choice([wikiA,wikiB]), { "action": "query", "prop": "revisions", "titles": page["title"], "rvprop": "ids", "rvlimit": "max" })
             res= req.query(querycontinue=False)
             revisions= res["query"]["pages"][str(page["pageid"])]["revisions"]
             if len(revisions) < 3:  # need 2 revisions to compare diffs, latest revision is generated when importing the page
                 print "%30s" % "not enough revisions, skipping"
-                continue
-            diffstotal+= 1
-            print "%30s" % ("comparing revs %d/%d" % (revisions[2]["revid"], revisions[1]["revid"])),
-            params= { "action": "compare", "fromrev": revisions[2]["revid"], "torev": revisions[1]["revid"] }
+                return None
+            rev1= revisions[1]
+            rev2= revisions[2]
+            #~ print "%30s" % ("comparing revs %d/%d" % (rev2["revid"], rev1["revid"])),
+            params= { "action": "compare", "fromrev": rev2["revid"], "torev": rev1["revid"] }
             res= api.APIRequest(wikiA, params).query(querycontinue=False)
             diffA= res["compare"]["*"].encode("utf-8")
             res= api.APIRequest(wikiB, params).query(querycontinue=False)
@@ -50,12 +52,11 @@ if __name__ == '__main__':
             
             movedpara= False
             if diffA==diffB:
-                print("[ ] no change")
+                #~ print("[ ] no change")
                 changed= False
             else:
-                print("[x] change found")
+                #~ print("[x] change found")
                 changed= True
-                diffschanged+= 1
                 diff= difflib.Differ().compare(diffA.split("\n"), diffB.split("\n"))
                 for line in diff:
                     if line[0] in "-+?":
@@ -63,8 +64,29 @@ if __name__ == '__main__':
                         if 'class="mw-diff-movedpara' in line:
                             movedpara= True
             
-            diffs.append({ "title": page["title"], "revs": [ revisions[2]["revid"], revisions[1]["revid"] ], "changed": changed, "movedpara": movedpara })
+            return { "title": page["title"], "revs": [ rev2["revid"], rev1["revid"] ], "changed": changed, "movedpara": movedpara }
+        
+        except api.APIError as ex:
+            if "DBQueryError" in str(ex):
+                # ...
+                print ex
+                return None
+            else:
+                raise
     
+    pool= ThreadPool(4)
+    reslist= []
+    for chunk in res:
+        for page in chunk["query"]["prefixsearch"]:
+            reslist.append(pool.apply_async(comparediffs, [page]))
+
+    diffs= [ res.get() for res in reslist ]
+    diffs= filter( lambda res: res!=None, diffs )
+    diffstotal= len(diffs)
+    diffschanged= 0
+    for d in diffs:
+        if d["changed"]:
+            diffschanged+= 1
     summary= "%d of %d compared diff outputs differ (%.2f%%)." % (diffschanged, diffstotal, diffschanged*100.0/diffstotal)
     print(summary)
     
