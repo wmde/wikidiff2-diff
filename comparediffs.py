@@ -11,6 +11,7 @@ import random
 from wikitools import wiki, api
 import difflib
 from multiprocessing.dummy import Pool as ThreadPool
+import copy
 
 if __name__ == '__main__':
     testwikiurl_old= "http://wmde-wikidiff2-unpatched.wmflabs.org/core"
@@ -29,7 +30,7 @@ if __name__ == '__main__':
 
     req= api.APIRequest(wikiA, { "action": "query", "list": "prefixsearch", "pssearch": "Autoimport/" })
     res= req.queryGen()
-    res= itertools.islice(res, 100/10)
+    #~ res= itertools.islice(res, 100/10)
     
     def comparediffs(page):
         #~ print("args: %s" % str(args))
@@ -64,7 +65,7 @@ if __name__ == '__main__':
                         if 'class="mw-diff-movedpara' in line:
                             movedpara= True
             
-            return { "title": page["title"], "revs": [ rev2["revid"], rev1["revid"] ], "changed": changed, "movedpara": movedpara }
+            return { "title": copy.copy(page["title"]), "revs": [ rev2["revid"], rev1["revid"] ], "changed": changed, "movedpara": movedpara }
         
         except api.APIError as ex:
             if "DBQueryError" in str(ex):
@@ -84,10 +85,13 @@ if __name__ == '__main__':
     diffs= filter( lambda res: res!=None, diffs )
     diffstotal= len(diffs)
     diffschanged= 0
+    movedparacount= 0
     for d in diffs:
         if d["changed"]:
             diffschanged+= 1
-    summary= "%d of %d compared diff outputs differ (%.2f%%)." % (diffschanged, diffstotal, diffschanged*100.0/diffstotal)
+        if d["movedpara"]:
+            movedparacount+= 1
+    summary= "%d of %d compared diff outputs differ (%.2f%%). moved lines found in %d diffs (%.2f%%)." % (diffschanged, diffstotal, diffschanged*100.0/diffstotal, movedparacount, movedparacount*100.0/diffstotal)
     print(summary)
     
     wikitext= """
@@ -100,6 +104,7 @@ if __name__ == '__main__':
 ! links
 ! changed
 ! movedpara
+! 
 """
     for d in diffs:
         t= page["title"].replace(' ', '_')
@@ -111,6 +116,7 @@ if __name__ == '__main__':
 | %(links)s
 | %(changed)s
 | %(movedpara)s
+|
 """ % d
     wikitext+= "|}\n"
     wikitext+= summary

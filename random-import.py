@@ -28,7 +28,7 @@ if __name__ == "__main__":
     print("token: %s\n" % token)
 
     rgen= api.APIRequest(srcwiki, { "action": "query", "list": "random", "rnlimit": 10, "rnnamespace": 0 }).queryGen()
-    pages= itertools.islice(rgen, 50/10)
+    pages= itertools.islice(rgen, 150/10)   # limit to 150 pages
     for chunk in pages:
         for page in chunk["query"]["random"]:
 ################### instead of using the export API, use the Special:Export API which is not part of the API. this is the only method which seems to work. go figure.
