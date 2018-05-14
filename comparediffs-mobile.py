@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 
 # compare Autoimport/* pages in test wiki before and after wikidiff2 changes
+# * another one-off for mobile changes *
 
 import sys
 import itertools
@@ -15,7 +16,7 @@ import copy
 
 if __name__ == '__main__':
     testwikiurl_old= "http://wmde-wikidiff2-unpatched.wmflabs.org/core"
-    testwikiurl_new= "http://wmde-wikidiff2-patched.wmflabs.org/core"
+    testwikiurl_new= "http://wmde-wikidiff2-mobile.wmflabs.org/core"
     wikiA= wiki.Wiki(testwikiurl_old + "/api.php") 
     wikiB= wiki.Wiki(testwikiurl_new + "/api.php")
 
@@ -30,7 +31,8 @@ if __name__ == '__main__':
 
     req= api.APIRequest(wikiA, { "action": "query", "list": "prefixsearch", "pssearch": "Autoimport/" })
     res= req.queryGen()
-    #~ res= itertools.islice(res, 100/10)
+    
+    #~ res= itertools.islice(res, 20/10)    # limit result size (chunks of 10)
     
     def comparediffs(page):
         #~ print("args: %s" % str(args))
@@ -45,7 +47,7 @@ if __name__ == '__main__':
             rev1= revisions[1]
             rev2= revisions[2]
             #~ print "%30s" % ("comparing revs %d/%d" % (rev2["revid"], rev1["revid"])),
-            params= { "action": "compare", "fromrev": rev2["revid"], "torev": rev1["revid"] }
+            params= { "action": "compare", "fromrev": rev2["revid"], "torev": rev1["revid"], "useformat": "mobile" }
             res= api.APIRequest(wikiA, params).query(querycontinue=False)
             diffA= res["compare"]["*"].encode("utf-8")
             res= api.APIRequest(wikiB, params).query(querycontinue=False)
@@ -108,7 +110,7 @@ if __name__ == '__main__':
 """
     for d in diffs:
         t= d["title"].replace(' ', '_')
-        d["links"]= "[%s/index.php?title=%s&diff=%s&oldid=%s old] / [%s/index.php?title=%s&diff=%s&oldid=%s new]" % (testwikiurl_old,t,d["revs"][1],d["revs"][0], testwikiurl_new,t,d["revs"][1],d["revs"][0])
+        d["links"]= "[%s/index.php?title=%s&diff=%s&oldid=%s&useformat=mobile old] / [%s/index.php?title=%s&diff=%s&oldid=%s&useformat=mobile new]" % (testwikiurl_old,t,d["revs"][1],d["revs"][0], testwikiurl_new,t,d["revs"][1],d["revs"][0])
         wikitext+= """
 |-
 | %(title)s
@@ -121,13 +123,11 @@ if __name__ == '__main__':
     wikitext+= "|}\n"
     wikitext+= summary
     
-    # XXXXXXXXXXXXXXXXXXXx
+    destpage= "Diffcompare_Mobile"
+    req= api.APIRequest(wikiA, { "action": "edit", "title": destpage, "text": wikitext, "token": edittoken }, write=True)
+    res= req.query(querycontinue=False)
+    if res["edit"]["result"] != "Success":
+        raise res
+    print("list saved to %s/index.php?title=%s" % (testwikiurl_new, destpage))
     
-    print("LIST NOT SAVED")
-    
-    #~ req= api.APIRequest(wikiA, { "action": "edit", "title": "Diffcompare", "text": wikitext, "token": edittoken }, write=True)
-    #~ res= req.query(querycontinue=False)
-    #~ if res["edit"]["result"] != "Success":
-        #~ raise res
-    #~ print("list saved to %s/index.php?title=%s" % (testwikiurl_new, "Diffcompare"))
     
