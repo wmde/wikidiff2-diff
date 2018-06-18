@@ -8,11 +8,17 @@ import itertools
 import re
 import urllib2
 from wikitools import wiki, api
-
-srcwikilang= "en"
+import argparse
 
 if __name__ == "__main__":
-    srcwiki= wiki.Wiki("https://%s.wikipedia.org/w/api.php" % srcwikilang) 
+    parser= argparse.ArgumentParser(description='import random pages to wikidiff2 test wikis.')
+    parser.add_argument('--srcwikilang', type=str, help='source wiki language code', default="en")
+    parser.add_argument('--destwikiurl', type=str, help='destination wiki api url', default="http://wmde-wikidiff2-patched.wmflabs.org/core")
+    parser.add_argument('--pageprefix', type=str, help='destination page prefix', default="Autoimport")
+    parser.add_argument('--maxpages', type=int, help='maximum number of pages', default=350)
+    args= parser.parse_args()
+
+    srcwiki= wiki.Wiki("https://%s.wikipedia.org/w/api.php" % args.srcwikilang) 
     dstwiki= wiki.Wiki("http://wmde-wikidiff2-patched.wmflabs.org/core/api.php") 
     # normal accounts don't work anymore. instead, there are "bot passwords" now which refer to accounts with special 
     # rights management. the set of possible rights for these non-accounts doesn't include importing, forcing me to 
@@ -28,17 +34,17 @@ if __name__ == "__main__":
     print("token: %s\n" % token)
 
     rgen= api.APIRequest(srcwiki, { "action": "query", "list": "random", "rnlimit": 10, "rnnamespace": 0 }).queryGen()
-    pages= itertools.islice(rgen, 150/10)   # limit to 150 pages
+    pages= itertools.islice(rgen, int(args.maxpages)/10)   # limit result set to n pages
     for chunk in pages:
         for page in chunk["query"]["random"]:
 ################### instead of using the export API, use the Special:Export API which is not part of the API. this is the only method which seems to work. go figure.
             title= page["title"].replace(" ", "_").encode("utf-8")
             print("page: '%s'" % title)
             params= "&pages=%s&offset=1&limit=10&action=submit" % title
-            f= urllib2.urlopen("https://en.wikipedia.org/w/index.php?title=Special:Export", params)
+            f= urllib2.urlopen("https://%s.wikipedia.org/w/index.php?title=Special:Export" % args.srcwikilang, params)
             page_xml= f.read()
-            page_xml= re.sub("<title>", "<title>Autoimport/", page_xml)
-            req= api.APIRequest(dstwiki, { "action": "import", "format": "xml", "xml": page_xml, "token": token, "interwikiprefix": "en" }, write=True, multipart=True)
+            page_xml= re.sub("<title>", "<title>%s/" % args.pageprefix, page_xml)
+            req= api.APIRequest(dstwiki, { "action": "import", "format": "xml", "xml": page_xml, "token": token, "interwikiprefix": args.srcwikilang }, write=True, multipart=True)
             # need to fiddle with this and then run the request manually, because the API desperately NEEDS the filename parameter even though it isn't used anywhere, and wikitools doesn't set it.
             req.encodeddata= re.sub('name="xml"', 'name="xml"; filename="broomstick.xml"', req.encodeddata)
             req.request = urllib2.Request(req.wiki.apibase, req.encodeddata, req.headers)
@@ -56,6 +62,8 @@ if __name__ == "__main__":
                     
                     #~ res= api.APIRequest(dstwiki, { "action": "delete", "title": "Autoimport/%s" % title, "token": token }, write=True).query(querycontinue=False)
                     #~ printf("delete result: %s" % res)
+                else:
+                    print ex
                     
 
 ################### transwiki import: 'Unrecognized value for parameter "interwikisource"' for "wikipedia", "en", "enwiki" etc. checked $wgImportSources and interwiki table, everything should work. giving up.

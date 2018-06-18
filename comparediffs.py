@@ -12,10 +12,21 @@ from wikitools import wiki, api
 import difflib
 from multiprocessing.dummy import Pool as ThreadPool
 import copy
+import argparse
+import urllib
 
 if __name__ == '__main__':
-    testwikiurl_old= "http://wmde-wikidiff2-unpatched.wmflabs.org/core"
-    testwikiurl_new= "http://wmde-wikidiff2-patched.wmflabs.org/core"
+    parser= argparse.ArgumentParser(description='compare Autoimport/* pages in test wikis before and after wikidiff2 changes. save to a page in newwiki.')
+    parser.add_argument('--oldwikiurl', type=str, help='old wiki url', default="http://wmde-wikidiff2-unpatched.wmflabs.org/core")
+    parser.add_argument('--newwikiurl', type=str, help='new wiki url', default="http://wmde-wikidiff2-patched.wmflabs.org/core")
+    parser.add_argument('--maxdiffs', type=int, help='max diffs to compare (default all)', default=0)
+    parser.add_argument('--save', type=bool, help='save result page (default False)', default=False)
+    parser.add_argument('--destpage', type=str, help='result page title (default "Diffcompare")', default="Diffcompare")
+    parser.add_argument('--prefix', type=str, help='search prefix (default "Autoimport/")', default="Autoimport/")
+    args= parser.parse_args()
+
+    testwikiurl_old= args.oldwikiurl
+    testwikiurl_new= args.newwikiurl
     wikiA= wiki.Wiki(testwikiurl_old + "/api.php") 
     wikiB= wiki.Wiki(testwikiurl_new + "/api.php")
 
@@ -28,13 +39,16 @@ if __name__ == '__main__':
     res= api.APIRequest(wikiA, { "action": "query", "prop": "info|revisions", "intoken": "edit", "titles": "Diffcompare" }).query(querycontinue=False) ["query"]["pages"]
     edittoken= res[res.keys()[0]]["edittoken"]
 
-    req= api.APIRequest(wikiA, { "action": "query", "list": "prefixsearch", "pssearch": "Autoimport/" })
+    req= api.APIRequest(wikiA, { "action": "query", "list": "prefixsearch", "pssearch": args.prefix })
     res= req.queryGen()
     #~ res= itertools.islice(res, 100/10)
+    if args.maxdiffs != 0:
+        res= itertools.islice(res, args.maxdiffs/10)
     
     def comparediffs(page):
         #~ print("args: %s" % str(args))
         print ("%60s" % page["title"]).encode("utf-8")  #,
+        
         try:
             req= api.APIRequest(random.choice([wikiA,wikiB]), { "action": "query", "prop": "revisions", "titles": page["title"], "rvprop": "ids", "rvlimit": "max" })
             res= req.query(querycontinue=False)
@@ -107,7 +121,7 @@ if __name__ == '__main__':
 ! 
 """
     for d in diffs:
-        t= d["title"].replace(' ', '_')
+        t= d["title"].replace(' ', '_').replace('"', "%22") 
         d["links"]= "[%s/index.php?title=%s&diff=%s&oldid=%s old] / [%s/index.php?title=%s&diff=%s&oldid=%s new]" % (testwikiurl_old,t,d["revs"][1],d["revs"][0], testwikiurl_new,t,d["revs"][1],d["revs"][0])
         wikitext+= """
 |-
@@ -121,13 +135,12 @@ if __name__ == '__main__':
     wikitext+= "|}\n"
     wikitext+= summary
     
-    # XXXXXXXXXXXXXXXXXXXx
-    
-    print("LIST NOT SAVED")
-    
-    #~ req= api.APIRequest(wikiA, { "action": "edit", "title": "Diffcompare", "text": wikitext, "token": edittoken }, write=True)
-    #~ res= req.query(querycontinue=False)
-    #~ if res["edit"]["result"] != "Success":
-        #~ raise res
-    #~ print("list saved to %s/index.php?title=%s" % (testwikiurl_new, "Diffcompare"))
+    if args.save:
+        req= api.APIRequest(wikiA, { "action": "edit", "title": args.destpage, "text": wikitext, "token": edittoken }, write=True)
+        res= req.query(querycontinue=False)
+        if res["edit"]["result"] != "Success":
+            raise res
+        print("list saved to %s/index.php?title=%s" % (testwikiurl_new, args.destpage))
+    else:
+        print("LIST NOT SAVED")
     
