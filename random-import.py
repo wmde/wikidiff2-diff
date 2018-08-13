@@ -41,7 +41,12 @@ if __name__ == "__main__":
             title= page["title"].replace(" ", "_").encode("utf-8")
             print("page: '%s'" % title)
             params= "&pages=%s&offset=1&limit=10&action=submit" % title
-            f= urllib2.urlopen("https://%s.wikipedia.org/w/index.php?title=Special:Export" % args.srcwikilang, params)
+            try:
+                f= urllib2.urlopen("https://%s.wikipedia.org/w/index.php?title=Special:Export" % args.srcwikilang, params)
+            except urllib2.HTTPError as ex:
+                print("Exception in urllib2.urlopen: ", ex)
+                print("continuing with next page...")
+                continue
             page_xml= f.read()
             page_xml= re.sub("<title>", "<title>%s/" % args.pageprefix, page_xml)
             req= api.APIRequest(dstwiki, { "action": "import", "format": "xml", "xml": page_xml, "token": token, "interwikiprefix": args.srcwikilang }, write=True, multipart=True)
